@@ -8,7 +8,8 @@ namespace ast {
         Number
     };
 
-    class Statement {};
+    class Statement {
+    };
 
     class Declaration : public Statement {
         std::string name;
@@ -16,34 +17,13 @@ namespace ast {
     };
 
     class Expression {
-    public:
-        virtual std::string toString() const = 0;
-
-        virtual bool operator==(const Expression &other) const = 0;
-
-        bool operator!=(const Expression &other) const { return !(*this == other); }
     };
-    std::ostream &operator<<(std::ostream &out, const Expression &ast) {
-        return out << ast.toString();
-    }
 
     class BooleanLiteral : public Expression {
     public:
         const bool value;
 
         explicit BooleanLiteral(const bool value) : value(value) {};
-
-        std::string toString() const final {
-            return std::to_string(value);
-        }
-
-        bool operator==(const Expression &other) const final {
-            if (const auto *const other_cast = dynamic_cast<const BooleanLiteral *const>(&other)) {
-                return this->value == other_cast->value;
-            } else {
-                return false;
-            }
-        }
     };
 
     class NumberLiteral : public Expression {
@@ -51,18 +31,6 @@ namespace ast {
         const unsigned int value;
 
         explicit NumberLiteral(const unsigned int value) : value(value) {};
-
-        std::string toString() const final {
-            return std::to_string(value);
-        }
-
-        bool operator==(const Expression &other) const final {
-            if (const auto *const other_cast = dynamic_cast<const NumberLiteral *const>(&other)) {
-                return this->value == other_cast->value;
-            } else {
-                return false;
-            }
-        }
     };
 
     class Assignment : public Statement {
@@ -76,79 +44,105 @@ namespace ast {
         std::vector<Statement> body;
     };
 
-    class AST {
+    class File {
         std::vector<Function> functions;
     };
 }
 
 namespace parser {
-    class Parser { ;
-        virtual std::unique_ptr<ast::Expression> parse() = 0;
-
-    protected:
-        const std::string &input;
-        unsigned int position;
-
-        explicit Parser(const std::string &input) : input(input), position(0) {}
+    class Parser {
+    public:
+        virtual bool parse(const std::string &input, unsigned int &position) const = 0;
     };
 
-    class BooleanLiteral : Parser {
+    class Literal : public Parser {
+        const std::string &literal;;
+
     public:
-        explicit BooleanLiteral(const std::string &input) : Parser(input) {}
-
-        std::unique_ptr<ast::Expression> parse() final {
-            std::string trueLiteral{"true"};
-            std::string falseLiteral{"false"};
-
-            if (this->input.find(trueLiteral, this->position) == this->position) {
-                position += trueLiteral.length();
-                return std::make_unique<ast::BooleanLiteral>(true);
-            } else if (input.find(falseLiteral, position) == position) {
-                position += falseLiteral.length();
-                return std::make_unique<ast::BooleanLiteral>(false);
+        bool parse(const std::string &input, unsigned int &position) const final {
+            if (input.find(literal, position) == position) {
+                position += literal.length();
+                return true;
             }
+            return false;
+        }
 
-            return nullptr;
+        explicit Literal(const std::string &literal) : literal(literal) {}
+    };
+
+    class Either : public Parser {
+        const std::vector<Parser> &parsers;;
+
+        bool parse(const std::string &input, unsigned int &position) const final {
+            for (const auto &parser : parsers) {
+                if (parser.parse(input, position)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+    public:
+        explicit Either(const std::vector<Parser> &parsers) : parsers(parsers) {}
+    };
+
+    class Repeat : public Parser {
+        const Parser &repeating;
+        const Parser &seperatedBy;;
+
+    public:
+        bool parse(const std::string &input, unsigned int &position) const final {
+            while (repeating.parse(input, position) && seperatedBy.parse(input, position)) {}
+            return true;
+        }
+
+        explicit Repeat(const Parser &repeating, const Parser &seperatedBy) : repeating(repeating),
+                                                                                    seperatedBy(seperatedBy) {}
+    };
+
+    class Whitespace : public Parser {
+        bool parse(const std::string &input, unsigned int &position) const final {
+            Repeat(Either{{Literal{" "}, Literal{"\t"}, Literal{"\n"}}}, Literal{""})
         }
     };
 }
 
 namespace test {
-    void assertEqual(std::unique_ptr<ast::Expression> lhs, std::unique_ptr<ast::Expression> rhs) {
-        std::string lhsString{};
-        std::string rhsString{};
-
-        if (lhs == rhs) {
-            return;
-        } else if (!lhs) {
-            lhsString = "nullptr";
-            rhsString = rhs->toString();
-        } else if (!rhs) {
-            lhsString = lhs->toString();
-            rhsString = "nullptr";
-        } else if(*lhs == *rhs) {
-            return;
-        } else {
-            lhsString = lhs->toString();
-            rhsString = rhs->toString();
-        }
-
-        std::cerr << "NOT EQUAL: " << std::endl << "\tLeft hand side: (" << lhsString << ")" << std::endl
-                  << "\tRight hand side: (" << rhsString << ")"
-                  << std::endl;
-    }
-
-    void parseBooleanLiteral() {
-        assertEqual(parser::BooleanLiteral{"true"}.parse(), std::make_unique<ast::BooleanLiteral>(true));
-        assertEqual(parser::BooleanLiteral{"false"}.parse(), std::make_unique<ast::BooleanLiteral>(false));
-        assertEqual(parser::BooleanLiteral{""}.parse(), nullptr);
-        assertEqual(parser::BooleanLiteral{"tru"}.parse(), nullptr);
-        assertEqual(parser::BooleanLiteral{"alse"}.parse(), nullptr);
-        assertEqual(parser::BooleanLiteral{"asdf"}.parse(), nullptr);
-    }
+//    void assertEqual(std::unique_ptr<ast::Expression> lhs, std::unique_ptr<ast::Expression> rhs) {
+//        std::string lhsString{};
+//        std::string rhsString{};
+//
+//        if (lhs == rhs) {
+//            return;
+//        } else if (!lhs) {
+//            lhsString = "nullptr";
+//            rhsString = rhs->toString();
+//        } else if (!rhs) {
+//            lhsString = lhs->toString();
+//            rhsString = "nullptr";
+//        } else if(*lhs == *rhs) {
+//            return;
+//        } else {
+//            lhsString = lhs->toString();
+//            rhsString = rhs->toString();
+//        }
+//
+//        std::cerr << "NOT EQUAL: " << std::endl << "\tLeft hand side: (" << lhsString << ")" << std::endl
+//                  << "\tRight hand side: (" << rhsString << ")"
+//                  << std::endl;
+//    }
+//
+//    void parseBooleanLiteral() {
+//        assertEqual(parser::BooleanLiteral{"true"}.parse(), std::make_unique<ast::BooleanLiteral>(true));
+//        assertEqual(parser::BooleanLiteral{"false"}.parse(), std::make_unique<ast::BooleanLiteral>(false));
+//        assertEqual(parser::BooleanLiteral{""}.parse(), nullptr);
+//        assertEqual(parser::BooleanLiteral{"tru"}.parse(), nullptr);
+//        assertEqual(parser::BooleanLiteral{"alse"}.parse(), nullptr);
+//        assertEqual(parser::BooleanLiteral{"asdf"}.parse(), nullptr);
+//    }
 
     void test() {
-        parseBooleanLiteral();
+//        parseBooleanLiteral();
     }
 }
 
